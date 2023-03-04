@@ -1,0 +1,10 @@
+[package]
+name = "lightspd-manifest"
+version = "0.1.0"
+edition = "2021"
+authors = ["Victor Roemer <victor@badsec.org>"]
+
+[dependencies]
+tar = "0.4.38"
+flate2 = "1.0.25"
+indexmap = "1.9.2"
