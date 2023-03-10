@@ -37,9 +37,10 @@ fn main() -> std::io::Result<()> {
 
     let mut lightspd_version = String::new();
 
-    let keep_modules: &[&str] = &[
-        snort_arch
-    ];
+    // There are several subdirs that must always be retained
+    let keep_rules: &[&str] = &[ "3.0.0.0" ];
+    let keep_modules: &[&str] = &[ "stubs" ];
+    let keep_modules_arch: &[&str] = &[ snort_arch ];
 
     // Collect all the assets in the lightspd package into a versioned map
     let mut map: AssetsMap = IndexMap::new();
@@ -62,17 +63,29 @@ fn main() -> std::io::Result<()> {
             let name = components.next().unwrap().as_os_str().to_str().unwrap();
             let ver = components.next().unwrap().as_os_str().to_str().unwrap();
             let arch = components.next().unwrap().as_os_str().to_str().unwrap();
+
             let version = version::parse_version_string(&ver).unwrap();
+            let version: version::Version = match name {
+                "rules" => {
+                    if keep_rules.contains(&ver) {
+                        version::Version::new(0, 0, 0, None, None)
+                    } else {
+                        version
+                    }
+                },
+                "modules" => {
+                    if !keep_modules.contains(&ver)
+                        && !keep_modules_arch.contains(&arch) {
+                        version::Version::new(999, 999, 999, None, None)
+                    } else {
+                        version
+                    }
+                },
+                _ => version,
+            };
 
             if version > snort_version {
                 continue;
-            }
-
-            // XXX Leaning on the version parser failing is crap
-            if name == "modules" {
-                if !version.any() && !keep_modules.contains(&arch) {
-                    continue;
-                }
             }
 
             let key = (name.to_string(), version);
@@ -83,13 +96,13 @@ fn main() -> std::io::Result<()> {
                 .push(value);
         }
 
+        // Special case, keep the lightspd/version.txt file.
         if path == std::path::PathBuf::from("lightspd/version.txt") {
-            let key = ("lightspd version".to_string(), version::Version::new(0,0,0,None,None));
+            let key = ("lightspd/version.txt".to_string(), version::Version::new(0,0,0,None,None));
             let value = path.display().to_string();
             map.entry(key)
                 .or_insert_with(Vec::new)
                 .push(value);
-
             let mut file = file;
             file.read_to_string(&mut lightspd_version)?;
         }
@@ -105,19 +118,15 @@ fn main() -> std::io::Result<()> {
         }
         if let Some(previous_version) = asset_versions.get(name).cloned() {
             if *version > previous_version && *version <= snort_version {
-                //eprintln!("replace {}: {} with {}", name, previous_version, version);
                 asset_versions.insert(name.clone(), version.clone());
-                //eprintln!("discard {}: {}", name, previous_version);
                 let key = (name.clone(), previous_version);
                 keys_to_remove.push(key.clone());
             } else {
-                //eprintln!("discard {}: {}", name, version);
                 let key = (name.clone(), version.clone());
                 keys_to_remove.push(key.clone());
             }
         }
         else {
-            //eprintln!("insert {}: {}", name, version);
             asset_versions.insert(name.clone(), version.clone());
         }
     }
