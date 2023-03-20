@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 use std::fs::File;
 use std::io::{ BufReader, Read };
 use flate2::read::GzDecoder;
@@ -31,12 +30,6 @@ fn main() -> std::io::Result<()> {
     let gz = GzDecoder::new(reader);
     let mut archive = Archive::new(gz);
 
-    let disobey = env::var("DISOBEY_PATRICK").unwrap_or(String::new());
-    let disobey = match disobey.to_lowercase().as_str() {
-        "true" | "yes" | "on" | "1" => true,
-        _ => false,
-    };
-
     if snort_version.any() {
         eprintln!("Error: invalid snort version: {}", &args[1]);
         std::process::exit(2);
@@ -44,8 +37,7 @@ fn main() -> std::io::Result<()> {
 
     let mut lightspd_version = String::new();
 
-    // There are several subdirs that must always be retained
-    let keep_rules: &[&str] = &[ "3.0.0.0" ];
+    // There are subdirs that must always be retained
     let keep_modules: &[&str] = &[ "stubs" ];
     let keep_modules_arch: &[&str] = &[ snort_arch ];
 
@@ -73,13 +65,6 @@ fn main() -> std::io::Result<()> {
 
             let version = version::parse_version_string(&ver).unwrap();
             let version: version::Version = match name {
-                "rules" => {
-                    if keep_rules.contains(&ver) {
-                        version::Version::new(0, 0, 0, None, None)
-                    } else {
-                        version
-                    }
-                },
                 "modules" => {
                     if !keep_modules.contains(&ver) && !keep_modules_arch.contains(&arch) {
                         version::Version::new(999, 999, 999, None, None)
@@ -90,7 +75,8 @@ fn main() -> std::io::Result<()> {
                 _ => version,
             };
 
-            if (disobey || name == "modules") && version > snort_version {
+            // Note, might need to limit this to (name == "modules")
+            if version > snort_version {
                 continue;
             }
 
@@ -123,17 +109,7 @@ fn main() -> std::io::Result<()> {
             continue;
         }
         if let Some(previous_version) = asset_versions.get(name).cloned() {
-            // Disobey Talos and trash the majority of older cruft.
-            if disobey {
-                if *version > previous_version && *version <= snort_version {
-                    asset_versions.insert(name.clone(), version.clone());
-                    let key = (name.clone(), previous_version);
-                    keys_to_remove.push(key.clone());
-                } else {
-                    let key = (name.clone(), version.clone());
-                    keys_to_remove.push(key.clone());
-                }
-            } else if name == "modules" {
+            if name == "modules" {
                 if  *version > previous_version && *version <= snort_version {
                     asset_versions.insert(name.clone(), version.clone());
                     let key = (name.clone(), previous_version);
